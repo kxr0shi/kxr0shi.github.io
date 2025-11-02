@@ -6,81 +6,42 @@
         return;
     }
 
-    console.log('✨ Плагин «Стильный интерфейс (широкие карточки)» запущен');
+    console.log('✨ Плагин «Стильный интерфейс (реальные wide-карточки)» запущен');
 
     /**
-     * Вставляем CSS-правила для широких карточек
+     * Патчим сетевой слой, чтобы подменить стиль карточек на wide
      */
-    function injectWideStyle() {
-        const style = document.createElement('style');
-        style.id = 'wide-card-style';
-        style.textContent = `
-            /* --- Стиль широких карточек --- */
-            .card--wide {
-                width: 30vw !important;
-                max-width: 500px !important;
-                height: auto !important;
-                transition: all 0.3s ease-in-out;
-            }
+    function interceptAPI() {
+        const originalGet = Lampa.Api.get;
 
-            /* Опционально – адаптивность */
-            @media (max-width: 1200px) {
-                .card--wide {
-                    width: 45vw !important;
+        Lampa.Api.get = function (url, params, onSuccess, onError, options) {
+            const wrappedSuccess = function (json) {
+                try {
+                    if (json && Array.isArray(json.results)) {
+                        json.results.forEach(item => {
+                            item.params = item.params || {};
+                            item.params.style = item.params.style || {};
+                            item.params.style.name = 'wide';
+                        });
+                    }
+
+                    // Можно также задавать стиль ряду
+                    json.params = json.params || {};
+                    json.params.items = json.params.items || {};
+                    json.params.items.view = 3; // как в исходниках
+
+                } catch (e) {
+                    console.error('Ошибка применения wide-стиля к результатам:', e);
                 }
-            }
 
-            @media (max-width: 768px) {
-                .card--wide {
-                    width: 80vw !important;
-                }
-            }
+                onSuccess && onSuccess(json);
+            };
 
-            /* При фокусе слегка увеличиваем */
-            .card--wide.focus {
-                transform: scale(1.05);
-                z-index: 5;
-            }
-        `;
-        document.head.appendChild(style);
+            return originalGet.call(this, url, params, wrappedSuccess, onError, options);
+        };
+
+        console.log('✅ Все карточки из API теперь создаются как wide');
     }
 
-    /**
-     * Патчим модуль Card, чтобы все карточки автоматически становились широкими
-     */
-    function enableWideCards() {
-        try {
-            const map = Lampa.Maker.map('Card');
-            const originalStyle = map.Style;
-
-            map.Style = Object.assign({}, originalStyle, {
-                onCreateAndAppend: function (card) {
-                    if (originalStyle && originalStyle.onCreateAndAppend)
-                        originalStyle.onCreateAndAppend.call(this, card);
-
-                    const elem = card.render ? card.render() : null;
-                    if (elem) elem.addClass('card--wide');
-                },
-                onBuild: function (card) {
-                    card.data = card.data || {};
-                    card.data.params = card.data.params || {};
-                    card.data.params.style = card.data.params.style || {};
-                    card.data.params.style.name = 'wide';
-
-                    if (originalStyle && originalStyle.onBuild)
-                        originalStyle.onBuild.call(this, card);
-                }
-            });
-
-            console.log('✅ Широкие карточки активированы');
-        } catch (err) {
-            console.error('Ошибка при активации wide-карточек:', err);
-        }
-    }
-
-    // Подключаем всё, когда приложение готово
-    Lampa.Listener.follow('app:ready', function () {
-        injectWideStyle();
-        enableWideCards();
-    });
+    Lampa.Listener.follow('app:ready', interceptAPI);
 })();
